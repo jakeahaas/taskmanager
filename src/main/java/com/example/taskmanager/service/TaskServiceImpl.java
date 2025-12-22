@@ -1,15 +1,22 @@
 package com.example.taskmanager.service;
 
+import java.time.Instant;
 import java.util.List;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.example.taskmanager.entity.AuditLog;
 import com.example.taskmanager.entity.Task;
+import com.example.taskmanager.entity.TaskStatus;
 import com.example.taskmanager.entity.User;
 import com.example.taskmanager.record.CreateTaskRequest;
 import com.example.taskmanager.record.TaskResponse;
+import com.example.taskmanager.record.UpdateTaskRequest;
 import com.example.taskmanager.repository.AuditLogRepository;
 import com.example.taskmanager.repository.TaskRepository;
 import com.example.taskmanager.repository.UserRepository;
@@ -66,6 +73,17 @@ public class TaskServiceImpl implements TaskService {
 
     @Override
     @Transactional(readOnly = true)
+    public Page<TaskResponse> getTasks(TaskStatus status, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+        Page<Task> tasksPage = status != null ?
+                taskRepository.findByStatus(status, pageable) :
+                taskRepository.findAll(pageable);
+
+        return tasksPage.map(this::mapToResponse);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<TaskResponse> getAllTasks() {
         return taskRepository.findAll()
                 .stream()
@@ -82,6 +100,53 @@ public class TaskServiceImpl implements TaskService {
                 task.getAssignedUser() != null ? task.getAssignedUser().getId() : null,
                 task.getCreatedAt(),
                 task.getUpdatedAt()
+        );
+    }
+
+    @Override
+    public TaskResponse updateTask(Long id, UpdateTaskRequest request) {
+        Task task = taskRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Task not found"));
+
+        User assignedUser = null;
+        if (request.assignedUserId() != null) {
+            assignedUser = userRepository.findById(request.assignedUserId())
+                    .orElseThrow(() -> new EntityNotFoundException("User not found"));
+        }
+
+        task.setTitle(request.title());
+        task.setDescription(request.description());
+        task.setStatus(request.status());
+        task.setAssignedUser(assignedUser);
+        task.setUpdatedAt(Instant.now());
+
+        Task updated = taskRepository.save(task);
+
+        auditLogRepository.save(
+                AuditLog.builder()
+                        .entityType("TASK")
+                        .entityId(updated.getId())
+                        .action("UPDATE")
+                        .performedBy("SYSTEM")
+                        .build()
+        );
+
+        return mapToResponse(updated);
+    }
+
+    @Override
+    public void deleteTask(Long id) {
+        Task task = taskRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Task not found"));
+        taskRepository.delete(task);
+
+        auditLogRepository.save(
+                AuditLog.builder()
+                        .entityType("TASK")
+                        .entityId(task.getId())
+                        .action("DELETE")
+                        .performedBy("SYSTEM")
+                        .build()
         );
     }
 }
