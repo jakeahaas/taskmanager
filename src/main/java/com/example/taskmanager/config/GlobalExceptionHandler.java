@@ -30,4 +30,10 @@ public class GlobalExceptionHandler {
                         .getDefaultMessage()
         );
     }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Map<String, String> handleIllegalArg(IllegalArgumentException ex) {
+        return Map.of("error", ex.getMessage());
+    }
 }
